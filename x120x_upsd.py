@@ -32,7 +32,7 @@ config['DEFAULT'] = {
     'min_charge_capacity': '20', 
     'battery_report_schedule': '0 * * * *',
     'ac_max_downtime': '5',
-    'warmup_time': '60',
+    'warmup_time': '0',
     'pid_file': ''
 }
 
