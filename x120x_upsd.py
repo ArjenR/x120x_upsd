@@ -14,6 +14,7 @@ import configparser
 import os
 import signal
 import smbus2
+import systemd.daemon
 import struct
 import time
 import traceback
@@ -337,8 +338,6 @@ def signal_handler(sig, frame):
     exit(0)
 
 if __name__ == '__main__':
-    import systemd.daemon
-
     print('Starting up UPS control daemon.', flush=True)
     
     config.read(CONFIG_FILE)
