@@ -9,8 +9,8 @@ I wrote this because I needed something a bit more robust and flexible than what
 
 ## Functionality
 - Shutdown the pi on timeout of power and/or settable minimums of battery charge or voltage.
-- Charge the battery to a set maximum level (charge or voltage) so not to overcharge the battery and prolongue battery life.
-- Only start charging when the pi has been running for a certain time so the battery can be warmed up by the Pi itself when when it might be used in colder ( < 10 degrees celsius) environments. This is not really precise and very dependent on the environment. Adding and monitoring a temperature sensor is a todo.
+- Charge the battery to a set maximum level (charge or voltage) so not to overcharge the battery and prolong battery life.
+- Only start charging when the pi has been running for a certain time so the battery can be warmed up by the Pi itself when when it might be used in colder ( < 10 degrees Celsius) environments. This is not really precise and very dependent on the environment. Adding and monitoring a temperature sensor is a todo.
 - Uses the systemd journal for logging. See it using `journalctl -xeu x120x_upsd.service`
 - It is meant to run as a systemd service, but can be run directly.
 
