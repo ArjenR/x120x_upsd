@@ -17,12 +17,14 @@ I wrote this because I needed something a bit more robust and flexible than what
 ## Install
 1. Clone or download this repository.
 2. Review the `x12x_ups.ini` and set according to your needs.
+>! Not mentioned in the ini is the parameter `disable_self_protect`. Setting this to `on` or `True` will enable you to discharge the lithium cells to the hardware default which I think is at 2.5 Volts. Some say newer cells can handle that. The script has it hardcoded at 3.0. You can set your own mimumum voltage by enabling this parameter and setting `min_voltage`.
 3. Review and understand the provided `install.sh` script as it is a good practice. 
 4. Run it with `sudo` to install files and dependencies and enable and start the service.
 5. Optionally: To stop charging quickly after power on so that the deamon can manage it, add `gpio=16=pu` to `/boot/firware/config.txt` and reboot.
 
 ## Todo
 - Add monitoring for a temperature sensor to measure battery temperature. Need to decide which sensor 1st. 
+- An api for an applet of some sorts?
 
 ## License
 This work is licensed under a

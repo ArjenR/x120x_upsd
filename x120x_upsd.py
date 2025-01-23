@@ -33,7 +33,8 @@ config['DEFAULT'] = {
     'battery_report_schedule': '0 * * * *',
     'ac_max_downtime': '5',
     'warmup_time': '0',
-    'pid_file': ''
+    'pid_file': '',
+    'disable_self_protect': 'Off'
 }
 
 CONFIG_FILE = '/usr/local/etc/x120x_upsd.ini'
@@ -331,8 +332,8 @@ class UPS_monitor:
 def signal_handler(sig, frame):
     systemd.daemon.notify('STOPPING=1')
     print(f'Signal {sig} received. Shutting down.', flush=True)
-    if pidfile != '' and os.path.isfile(pidfile):
-        os.unlink(pidfile)
+    if PIDFILE != '' and os.path.isfile(PIDFILE):
+        os.unlink(PIDFILE)
     exit(0)
 
 if __name__ == '__main__':
@@ -350,16 +351,17 @@ if __name__ == '__main__':
     AC_MAX_DOWNTIME         = config['general'].getint('ac_max_downtime')
     WARMUP_TIME             = config['general'].getint('warmup_time')
     BATTERY_REPORT_SCHEDULE = config['general'].get('battery_report_schedule')
-    pidfile                 = config['general'].get('pid_file')
+    PIDFILE                 = config['general'].get('pid_file')
+    DISABLE_SELF_PROTECT    = config['general'].getboolean('disable_self_protect')
 
     # Ensure only one instance of the script is running
-    if pidfile != '':
+    if PIDFILE != '':
         pid = str(os.getpid())
-        if os.path.isfile(pidfile):
+        if os.path.isfile(PIDFILE):
             print('Script already running.', flush=True)
             exit(1)
         else:
-            with open(pidfile, 'w') as f:
+            with open(PIDFILE, 'w') as f:
                 f.write(pid)
   
     try:
@@ -371,7 +373,7 @@ if __name__ == '__main__':
         battery = Battery(BUS_ADDRESS, BATTERY_ADDRESS, charger, max_voltage=MAX_VOLTAGE, \
                           min_voltage=MIN_VOLTAGE, max_capacity=MAX_CHARGE_CAPACITY, \
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
-                          battery_report_schedule=BATTERY_REPORT_SCHEDULE)
+                          battery_report_schedule=BATTERY_REPORT_SCHEDULE, disable_self_protect=DISABLE_SELF_PROTECT)
         battery.print_battery_report()
         battery.start_warmup() # start_warmup will start the other battery threads once done.
         ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME)
@@ -388,7 +390,7 @@ if __name__ == '__main__':
         exit(1)
 
     finally:
-        if pidfile != '' and os.path.isfile(pidfile):
-            os.unlink(pidfile)
+        if PIDFILE != '' and os.path.isfile(PIDFILE):
+            os.unlink(PIDFILE)
         exit(0)
 
