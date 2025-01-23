@@ -159,7 +159,7 @@ class Battery:
 
     @property
     def is_warmed_up(self):
-        return self._minutes_since_boot() < self._warmup_time
+        return self._minutes_since_boot() > self._warmup_time
     
     def needs_charging(self):
         if self._max_capacity != None and self._max_capacity >= 20 \
@@ -174,15 +174,7 @@ class Battery:
         elif self.current_voltage < (self._max_voltage - (self._max_voltage * self._recharge_hysteresis / 100)):
             return True
         return None
-
-    # def get_battery_status(self):
-    #     status = {'charging': self._charging,
-    #         'charger_present': self._charger_.resent(),
-    #         'voltage': self.current_voltage(),
-    #         'capacity': self.current_capacity(),
-    #         'warmed_up': self.is_warmed_up,
-    #         'needs_charging': None,_charge_start
-    
+  
     def battery_report(self):
         return (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
                 f'and {"not " if not self._charger.charging else ""}charging. ' \
