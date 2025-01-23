@@ -341,8 +341,6 @@ if __name__ == '__main__':
 
     print('Starting up UPS control daemon.', flush=True)
     
-    # with open(CONFIG_FILE) as config_file:
-    #     config.read(config_file)
     config.read(CONFIG_FILE)
     MAX_VOLTAGE             = config['general'].getfloat('max_voltage')
     MIN_VOLTAGE             = config['general'].getfloat('min_voltage')
