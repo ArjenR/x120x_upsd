@@ -16,8 +16,7 @@ I wrote this because I needed something a bit more robust and flexible than what
 
 ## Install
 1. Clone or download this repository.
-2. Review the `x12x_ups.ini` and set according to your needs.
->! Not mentioned in the ini is the parameter `disable_self_protect`. Setting this to `on` or `True` will enable you to discharge the lithium cells to the hardware default which I think is at 2.5 Volts. Some say newer cells can handle that. The script has it hardcoded at 3.0. You can set your own mimumum voltage by enabling this parameter and setting `min_voltage`.
+2. Review the `x12x_ups.ini` and set according to your needs. [^1]
 3. Review and understand the provided `install.sh` script as it is a good practice. 
 4. Run it with `sudo sh -x ./install.sh` to install files and dependencies and enable and start the service.
 5. Optionally: To stop charging quickly after power on so that the deamon can manage it, add `gpio=16=pu` to `/boot/firware/config.txt` and reboot.
@@ -35,3 +34,5 @@ This work is licensed under a
 [cc-by-sa]: http://creativecommons.org/licenses/by-sa/4.0/
 [cc-by-sa-image]: https://licensebuttons.net/l/by-sa/4.0/88x31.png
 [cc-by-sa-shield]: https://img.shields.io/badge/License-CC%20BY--SA%204.0-lightgrey.svg
+
+[^1]: Not mentioned in the ini is the parameter `disable_self_protect`. Setting this to `on` or `True` will enable you to discharge the lithium cells to the hardware default which I think is at 2.5 Volts. Some say newer cells can handle that. The script has it hardcoded at 3.0. You can set your own mimumum voltage by enabling this parameter and setting `min_voltage`.
