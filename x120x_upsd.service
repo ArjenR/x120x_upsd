@@ -1,0 +1,15 @@
+[Unit]
+Description=X1202X UPS Daemon
+Before=basic.target
+After=local-fs.target sysinit.target
+DefaultDependencies=no
+
+[Service]
+Type=notify
+WatchdogSec=120s
+# NotifyAccess=main
+ExecStart=/usr/bin/python3 /usr/local/bin/x120x_upsd.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
