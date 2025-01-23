@@ -8,7 +8,7 @@ DefaultDependencies=no
 Type=notify
 WatchdogSec=120s
 # NotifyAccess=main
-ExecStart=/usr/bin/python3 /usr/local/bin/x120x_upsd.py
+ExecStart=/usr/local/bin/x120x_upsd.py
 Restart=on-failure
 
 [Install]
