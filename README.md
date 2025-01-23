@@ -14,12 +14,11 @@ I wrote this because I needed something a bit more robust and flexible than what
 - Uses the systemd journal for logging. See it using `journalctl -xeu x120x_upsd.service`
 
 ## Install
-Review the `x12x_ups.ini` and set according to your needs.
-
-Review and understand the provided `install.sh` script as it is a good practice. 
-Run it with `sudo` to install files and dependencies and enable and start the service.
-
-To stop charging quickly after power on so that the deamon can manage it, add `gpio=16=pu` to `/boot/firware/config.txt` and reboot.
+1. Clone or download this repository.
+2. Review the `x12x_ups.ini` and set according to your needs.
+3. Review and understand the provided `install.sh` script as it is a good practice. 
+4. Run it with `sudo` to install files and dependencies and enable and start the service.
+5. Optionally: To stop charging quickly after power on so that the deamon can manage it, add `gpio=16=pu` to `/boot/firware/config.txt` and reboot.
 
 ## Todo
 - Add monitoring for a temperature sensor to measure battery temperature. Need to decide which sensor 1st. 
