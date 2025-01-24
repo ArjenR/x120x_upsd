@@ -238,9 +238,9 @@ class Battery:
             if self.needs_charging() == False and self._charger.charging:
                 self._charger.stop()
                 print(f'Charging stopped at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
-            elif self.needs_charging() == True and not self._charger.charging :
+            elif self.needs_charging() == True and not self._charger.charging:
                 self._charger.start()
-                print(f'Charging started at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
+                print(f'Charging {"started" if self._charger.present else "needed"} at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
             time.sleep(30)
     
     def start_selfprotect(self):
@@ -327,7 +327,7 @@ class UPS_monitor:
                 print(f'Power returned after {self._timer_no_power.stop():0.0f} seconds', flush=True)
                 self._msg_no_power_no_charging_sent = False
             elif not self._shutdown_initiated and self._timer_no_power.elapsed_time() >= self._max_duration:
-                self.initiate_5_minute_shutdown(f'Power failed for {(self._timer_no_power.elapsed_time()/60):0.0f} minutes', flush=True)
+                self.initiate_5_minute_shutdown(f'Power failed for {(self._timer_no_power.elapsed_time()/60):0.0f} minutes')
             time.sleep(30)
 
 def signal_handler(sig, frame):
