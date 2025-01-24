@@ -319,7 +319,7 @@ class UPS_monitor:
                 print('Power failed, but the battery does not need charging', flush=True)
                 self._msg_no_power_no_charging_sent = True
             elif not self._charger.present and self._timer_no_power.elapsed_time() == 0 and self.battery.needs_charging():
-                self._timer_no_power.start
+                self._timer_no_power.start()
                 print('Power failed.', flush=True)
             elif self._charger.present and self._timer_no_power.elapsed_time() != 0:
                 if self._shutdown_initiated:
