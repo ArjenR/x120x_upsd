@@ -105,7 +105,7 @@ class Charger:
 
 class Battery:
     def __init__(self, bus_address, address, charger, max_voltage=0, min_voltage=0, max_capacity=None, min_capacity=20,
-                warmup_time=60, battery_report_schedule='',disable_self_protect=False):
+                warmup_time=60, battery_report_schedule='',disable_self_protect=False, stopsignal=None):
         self._bus = smbus2.SMBus(bus_address)
         self._address = address
         self._charger = charger
@@ -120,6 +120,7 @@ class Battery:
         self._warmup_thread = None
         self._charge_control_thread = None
         self._regular_report = None
+        self._stopsignal = stopsignal
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
         if not self.disable_self_protect: self.start_selfprotect()
@@ -225,16 +226,17 @@ class Battery:
     def _wait_for_warmup(self):
         if not self.is_warmed_up:
             print(f'Waiting for the computer to warm the batteries for {self._warmup_time - self._minutes_since_boot() } minutes.', flush=True)
-            while not self.is_warmed_up:
+            while not self.is_warmed_up or not (self._stopsignal != None and self._stopsignal.kill_now):
                 if not self._charger.present:
                     print('Battery is not warmed up yet and no charger present!', flush=True)
                     call('sudo nohup shutdown -h now', shell=True)
                 time.sleep(10)
-        print('Batteries are warmed up. Starting charging control process', flush=True)
-        self.start_charge_control()
+        if not (self._stopsignal != None and self._stopsignal.kill_now):
+            print('Batteries are warmed up. Starting charging control process', flush=True)
+            self.start_charge_control()
 
     def _charge_control(self):
-        while not self._stop_charge_control.is_set():
+        while not self._stop_charge_control.is_set() or not (self._stopsignal != None and self._stopsignal.kill_now)
             if self.needs_charging() == False and self._charger.charging:
                 self._charger.stop()
                 print(f'Charging stopped at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
@@ -248,7 +250,7 @@ class Battery:
         self._selfprotect_thread.start()
 
     def _selfprotect(self):
-        while self.current_voltage >= self._protect_voltage:
+        while (self.current_voltage >= self._protect_voltage) or not (self._stopsignal != None and self._stopsignal.kill_now):
             time.sleep(30)
         # If this loop exits, power is too low!
         print('Battery is too low! Emergency shutdown!', flush=True)
@@ -256,7 +258,7 @@ class Battery:
 
 
 class UPS_monitor:
-    def __init__(self, charger, battery, max_duration=0):
+    def __init__(self, charger, battery, max_duration=0, stopsignal=None):
         self._charger = charger
         self.battery = battery
         self._max_duration = max_duration * 60
@@ -265,6 +267,7 @@ class UPS_monitor:
         self._msg_no_power_no_charging_sent = False
         self._monitor_battery_thread = None
         self._monitor_charger_thread = None
+        self._stopsignal = stopsignal
      
     def initiate_5_minute_shutdown(self, message):
         if not self._shutdown_initiated:
@@ -313,7 +316,7 @@ class UPS_monitor:
             time.sleep(10)
 
     def _monitor_charger(self):
-        while not self._stop_monitor_charger.is_set():
+        while not self._stop_monitor_charger.is_set() or not (self._stopsignal != None and self._stopsignal.kill_now):
             if not self._msg_no_power_no_charging_sent and not self._charger.present \
                     and self._timer_no_power.elapsed_time() == 0 and not self.battery.needs_charging():
                 print('Power failed, but the battery does not need charging', flush=True)
@@ -330,12 +333,20 @@ class UPS_monitor:
                 self.initiate_5_minute_shutdown(f'Power failed for {(self._timer_no_power.elapsed_time()/60):0.0f} minutes')
             time.sleep(30)
 
-def signal_handler(sig, frame):
-    systemd.daemon.notify('STOPPING=1')
-    print(f'Signal {sig} received. Shutting down.', flush=True)
-    if PIDFILE != '' and os.path.isfile(PIDFILE):
-        os.unlink(PIDFILE)
-    exit(0)
+class GracefullKiller:
+    kill_now = False
+    def __init__(self):
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGHUP, self.signal_handler)
+
+    def signal_handler(self, sig, frame):
+        self.kill_now = True
+        systemd.daemon.notify('STOPPING=1')
+        print(f'Signal {sig} received. Shutting down.', flush=True)
+        if PIDFILE != '' and os.path.isfile(PIDFILE):
+            os.unlink(PIDFILE)
+        exit(0)
 
 if __name__ == '__main__':
     print('Starting up UPS control daemon.', flush=True)
@@ -362,18 +373,16 @@ if __name__ == '__main__':
                 f.write(pid)
   
     try:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGHUP, signal_handler)
-    
+        stopsignal = GracefullKiller()
         charger = Charger(CHG_ONOFF_PIN, CHG_PRESENT_PIN)
         battery = Battery(BUS_ADDRESS, BATTERY_ADDRESS, charger, max_voltage=MAX_VOLTAGE, \
                           min_voltage=MIN_VOLTAGE, max_capacity=MAX_CHARGE_CAPACITY, \
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
-                          battery_report_schedule=BATTERY_REPORT_SCHEDULE, disable_self_protect=DISABLE_SELF_PROTECT)
+                          battery_report_schedule=BATTERY_REPORT_SCHEDULE, disable_self_protect=DISABLE_SELF_PROTECT, \
+                          stopsignal=stopsignal)
         battery.print_battery_report()
         battery.start_warmup() # start_warmup will start the other battery threads once done.
-        ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME)
+        ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME, stopsignal=stopsignal)
         ups.start_monitor_processes()
         systemd.daemon.notify('READY=1')
         print('Startup complete.', flush=True)
