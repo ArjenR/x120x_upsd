@@ -236,7 +236,7 @@ class Battery:
             self.start_charge_control()
 
     def _charge_control(self):
-        while not self._stop_charge_control.is_set() or not (self._stopsignal != None and self._stopsignal.kill_now)
+        while not self._stop_charge_control.is_set() or not (self._stopsignal != None and self._stopsignal.kill_now):
             if self.needs_charging() == False and self._charger.charging:
                 self._charger.stop()
                 print(f'Charging stopped at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
