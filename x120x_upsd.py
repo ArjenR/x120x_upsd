@@ -306,14 +306,15 @@ class UPS_monitor:
     
     def _monitor_battery(self):
         while not self._stop_monitor_battery.is_set():
-            c = self.battery.current_capacity
-            v = self.battery.current_voltage
-            c_min = self.battery.min_capacity
-            v_min = self.battery.min_voltage
-            if c <= c_min and not self._shutdown_initiated:
-                self.initiate_5_minute_shutdown(f'Capacity {c}% below setpoint {c_min}%')
-            elif v_min != None and v <= v_min and not self._shutdown_initiated:
-                 self.initiate_5_minute_shutdown(f'Voltage {v:0.2f}V below setpoint {v_min:0.2f}V')
+            if not self._charger.present:
+                c = self.battery.current_capacity
+                v = self.battery.current_voltage
+                c_min = self.battery.min_capacity
+                v_min = self.battery.min_voltage
+                if c <= c_min and not self._shutdown_initiated:
+                    self.initiate_5_minute_shutdown(f'Capacity {c}% below setpoint {c_min}%')
+                elif v_min != None and v <= v_min and not self._shutdown_initiated:
+                    self.initiate_5_minute_shutdown(f'Voltage {v:0.2f}V below setpoint {v_min:0.2f}V')
             time.sleep(10)
 
     def _monitor_charger(self):
