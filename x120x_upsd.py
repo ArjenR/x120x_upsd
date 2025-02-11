@@ -35,7 +35,8 @@ config['DEFAULT'] = {
     'ac_max_downtime': '5',
     'warmup_time': '0',
     'pid_file': '',
-    'disable_self_protect': 'Off'
+    'disable_self_protect': 'Off',
+    'no_power_at_start': 'default'
 }
 
 CONFIG_FILE = '/usr/local/etc/x120x_upsd.ini'
@@ -126,7 +127,7 @@ class Battery:
         if not self.disable_self_protect: self.start_selfprotect()
         if self._battery_report_schedule:
             self.start_regular_battery_report(self._battery_report_schedule)
-
+        
     @property
     def current_voltage(self):
         read = self._bus.read_word_data(self._address, 2) # reads word data (16 bit)
@@ -361,6 +362,7 @@ if __name__ == '__main__':
     BATTERY_REPORT_SCHEDULE = config['general'].get('battery_report_schedule')
     PIDFILE                 = config['general'].get('pid_file')
     DISABLE_SELF_PROTECT    = config['general'].getboolean('disable_self_protect')
+    NO_POWER_AT_START       = config['general'].get('no_power_at_start')
 
     # Ensure only one instance of the script is running
     if PIDFILE != '':
@@ -381,9 +383,20 @@ if __name__ == '__main__':
                           battery_report_schedule=BATTERY_REPORT_SCHEDULE, disable_self_protect=DISABLE_SELF_PROTECT, \
                           stopsignal=stopsignal)
         battery.print_battery_report()
-        battery.start_warmup() # start_warmup will start the other battery threads once done.
-        ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME, stopsignal=stopsignal)
-        ups.start_monitor_processes()
+        if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
+            # failsafe, anything other is handled as default.
+            if NO_POWER_AT_START != 'standard':
+                raise Warning(f'Warning: no_power_at_start value "{NO_POWER_AT_START}" is not implemented. Using "standard" as fall-back.')
+            battery.start_warmup() # start_warmup will start the other battery threads once done.
+            ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME, stopsignal=stopsignal) 
+            ups.start_monitor_processes()
+        elif not charger.present and NO_POWER_AT_START == 'run_till_minimums':
+            battery.start_charge_control() # Do not warmup, handle charging if power return
+            ups = UPS_monitor(charger, battery, max_duration=0, stopsignal=stopsignal) # only shutdown at minimum.
+        elif not charger.present and NO_POWER_AT_START == 'run_till_protect':
+            battery.start_charge_control() # Do not warmup, handle charging if power returns
+            # We are not starting ups for this session.
+            
         systemd.daemon.notify('READY=1')
         print('Startup complete.', flush=True)
         while True:
@@ -398,5 +411,5 @@ if __name__ == '__main__':
     finally:
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
-        exit(0)
+        exit(0) 
 
