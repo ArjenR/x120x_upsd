@@ -386,8 +386,8 @@ if __name__ == '__main__':
         battery.print_battery_report()
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
-            if NO_POWER_AT_START != 'standard':
-                raise Warning(f'Warning: no_power_at_start value "{NO_POWER_AT_START}" is not implemented. Using "standard" as fall-back.')
+            if NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect', 'standard']:
+                raise Warning(f'Warning: no_power_at_start value \"{NO_POWER_AT_START}\" is not implemented. Using "standard" as fall-back.')
             battery.start_warmup() # start_warmup will start the other battery threads once done.
             ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME, stopsignal=stopsignal) 
             ups.start_monitor_processes()
