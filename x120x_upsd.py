@@ -18,6 +18,7 @@ import systemd.daemon
 import struct
 import time
 import traceback
+import json
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -35,6 +36,7 @@ config['DEFAULT'] = {
     'ac_max_downtime': '5',
     'warmup_time': '0',
     'pid_file': '',
+    'battery_json_file': '',
     'disable_self_protect': 'Off',
     'no_power_at_start': 'default'
 }
@@ -106,7 +108,7 @@ class Charger:
 
 class Battery:
     def __init__(self, bus_address, address, charger, max_voltage=0, min_voltage=0, max_capacity=None, min_capacity=20,
-                warmup_time=60, battery_report_schedule='',disable_self_protect=False, stopsignal=None):
+                warmup_time=60, battery_report_schedule='',disable_self_protect=False, stopsignal=None, battery_json_file=''):
         self._bus = smbus2.SMBus(bus_address)
         self._address = address
         self._charger = charger
@@ -122,6 +124,7 @@ class Battery:
         self._charge_control_thread = None
         self._regular_report = None
         self._stopsignal = stopsignal
+        self._battery_json_file = battery_json_file
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
         if not self.disable_self_protect: self.start_selfprotect()
@@ -181,12 +184,12 @@ class Battery:
   
     def battery_report(self):
         return (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
-                f'and {"not " if not self._charger.charging else ""}charging. ' \
+                f'and {"not " if not self._charger.charging & self._charger.present else ""}charging. ' \
                 f'It {"needs" if self.needs_charging() else "does not need"} charging. ' \
                 f'Charger is {"not " if not self._charger.present else ""}present.')
     
     def print_battery_report(self):
-        print(self.battery_report())
+        print(self.battery_report(), flush=True)
     
     def start_regular_battery_report(self, schedule):
         self._regular_report = BackgroundScheduler()
@@ -306,11 +309,29 @@ class UPS_monitor:
     
     def _monitor_battery(self):
         while not self._stop_monitor_battery.is_set():
+            c = self.battery.current_capacity
+            v = self.battery.current_voltage
+            c_min = self.battery.min_capacity
+            v_min = self.battery.min_voltage
+            if self.battery._battery_json_file != '':
+                battery_status = {
+                    'current_capacity': c,
+                    'current_voltage': v,
+                    'min_capacity': c_min,
+                    'min_voltage': v_min,
+                    'max_capacity': self.battery.max_capacity,
+                    'max_voltage': self.battery.max_voltage,
+                    'charger_present': self._charger.present,
+                    'charger_charging': self._charger.charging & self._charger.present
+                }
+                if self.battery._battery_json_file:
+                    try:
+                        with open(self.battery._battery_json_file, 'w') as json_file:
+                            json.dump(battery_status, json_file)
+                    except IOError as e:
+                        print(f"Error writing to battery JSON file ({self.battery._battery_json_file}): {e}", flush=True)
+
             if not self._charger.present:
-                c = self.battery.current_capacity
-                v = self.battery.current_voltage
-                c_min = self.battery.min_capacity
-                v_min = self.battery.min_voltage
                 if c <= c_min and not self._shutdown_initiated:
                     self.initiate_5_minute_shutdown(f'Capacity {c}% below setpoint {c_min}%')
                 elif v_min != None and v <= v_min and not self._shutdown_initiated:
@@ -364,6 +385,7 @@ if __name__ == '__main__':
     PIDFILE                 = config['general'].get('pid_file')
     DISABLE_SELF_PROTECT    = config['general'].getboolean('disable_self_protect')
     NO_POWER_AT_START       = config['general'].get('no_power_at_start')
+    BATTERY_JSON_FILE       = config['general'].get('battery_json_file').strip().strip('"')
 
     # Ensure only one instance of the script is running
     if PIDFILE != '':
@@ -382,7 +404,7 @@ if __name__ == '__main__':
                           min_voltage=MIN_VOLTAGE, max_capacity=MAX_CHARGE_CAPACITY, \
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
                           battery_report_schedule=BATTERY_REPORT_SCHEDULE, disable_self_protect=DISABLE_SELF_PROTECT, \
-                          stopsignal=stopsignal)
+                          stopsignal=stopsignal, battery_json_file=BATTERY_JSON_FILE)
         battery.print_battery_report()
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
