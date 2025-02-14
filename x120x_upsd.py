@@ -186,7 +186,7 @@ class Battery:
                 f'Charger is {"not " if not self._charger.present else ""}present.')
     
     def print_battery_report(self):
-        print(self.battery_report())
+        print(self.battery_report(), flush=True)
     
     def start_regular_battery_report(self, schedule):
         self._regular_report = BackgroundScheduler()
