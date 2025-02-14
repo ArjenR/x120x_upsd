@@ -181,7 +181,7 @@ class Battery:
   
     def battery_report(self):
         return (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
-                f'and {"not " if not self._charger.charging else ""}charging. ' \
+                f'and {"not " if not self._charger.charging & self._charger.present else ""}charging. ' \
                 f'It {"needs" if self.needs_charging() else "does not need"} charging. ' \
                 f'Charger is {"not " if not self._charger.present else ""}present.')
     
