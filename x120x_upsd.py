@@ -292,7 +292,7 @@ class UPS_monitor:
             self._stop_monitor_battery = Event()
             self._monitor_battery_thread = Thread(target=self._monitor_battery, daemon=True)
             self._monitor_battery_thread.start()
-        if self._max_duration and not(self._monitor_charger_thread and self._monitor_charger_thread.is_alive()):
+        if not(self._monitor_charger_thread and self._monitor_charger_thread.is_alive()):
             self._stop_monitor_charger = Event()
             self._monitor_charger_thread = Thread(target=self._monitor_charger, daemon=True)
             self._monitor_charger_thread.start()
@@ -332,7 +332,7 @@ class UPS_monitor:
                     self.cancel_shutdown()
                 print(f'Power returned after {self._timer_no_power.stop():0.0f} seconds', flush=True)
                 self._msg_no_power_no_charging_sent = False
-            elif not self._shutdown_initiated and self._timer_no_power.elapsed_time() >= self._max_duration:
+            elif not self._shutdown_initiated and self._max_duration and self._timer_no_power.elapsed_time() >= self._max_duration:
                 self.initiate_5_minute_shutdown(f'Power failed for {(self._timer_no_power.elapsed_time()/60):0.0f} minutes')
             time.sleep(30)
 
