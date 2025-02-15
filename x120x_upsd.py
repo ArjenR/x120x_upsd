@@ -16,6 +16,7 @@ import signal
 import smbus2
 import systemd.daemon
 import struct
+import sys
 import time
 import traceback
 import json
@@ -409,7 +410,7 @@ class GracefullKiller:
         print(f'Signal {sig} received. Shutting down.', flush=True)
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
-        os.exit(0)
+        sys.exit(0)
 
 if __name__ == '__main__':
     print('Starting up UPS control daemon.', flush=True)
@@ -472,10 +473,10 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'There was an error: {e}', flush=True)
         traceback.print_exc()
-        os.exit(1)
+        sys.exit(1)
 
     finally:
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
-        os.exit(0)
+        sys.exit(0)
 
