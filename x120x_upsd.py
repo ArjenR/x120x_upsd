@@ -347,12 +347,12 @@ class Publisher:
         self._json_report_period = json_report_period
 
     def publish_json_file(self):
-        if self.battery._json_report_file != '':
+        if self._json_report_file != '':
             try:
-                with open(self.battery._json_report_file, 'w') as json_file:
-                    json.dump(self.battery.json_report, json_file)
+                with open(self._json_report_file, 'w') as json_file:
+                    json.dump(self._battery.json_report(), json_file)
             except IOError as e:
-                print(f"Error writing battery report to JSON file ({self.battery._json_report_file}): {e}", flush=True)
+                print(f"Error writing battery report to JSON file ({self._json_report_file}): {e}", flush=True)
 
     def _publish_json_file_thread(self):
         while not self._stop_publish_json_file_thread.is_set():
@@ -409,7 +409,7 @@ class GracefullKiller:
         print(f'Signal {sig} received. Shutting down.', flush=True)
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
-        exit(0)
+        os.exit(0)
 
 if __name__ == '__main__':
     print('Starting up UPS control daemon.', flush=True)
@@ -472,10 +472,10 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'There was an error: {e}', flush=True)
         traceback.print_exc()
-        exit(1)
+        os.exit(1)
 
     finally:
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
-        exit(0) 
+        os.exit(0)
 
