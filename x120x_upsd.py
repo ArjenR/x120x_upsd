@@ -36,7 +36,8 @@ config['DEFAULT'] = {
     'ac_max_downtime': '5',
     'warmup_time': '0',
     'pid_file': '',
-    'battery_json_file': '',
+    'json_report_file': '',
+    'json_report_period': '',
     'disable_self_protect': 'Off',
     'no_power_at_start': 'default'
 }
@@ -108,7 +109,7 @@ class Charger:
 
 class Battery:
     def __init__(self, bus_address, address, charger, max_voltage=0, min_voltage=0, max_capacity=None, min_capacity=20,
-                warmup_time=60, battery_report_schedule='',disable_self_protect=False, stopsignal=None, battery_json_file=''):
+                warmup_time=60, disable_self_protect=False, stopsignal=None, json_report_file=''):
         self._bus = smbus2.SMBus(bus_address)
         self._address = address
         self._charger = charger
@@ -119,12 +120,11 @@ class Battery:
         self._min_capacity = min_capacity if (min_capacity >= 20 and min_capacity <= 80) else 10
         self._min_voltage = min_voltage if min_voltage <= 4 else 0
         self._warmup_time = warmup_time
-        self._battery_report_schedule = battery_report_schedule
         self._warmup_thread = None
         self._charge_control_thread = None
         self._regular_report = None
         self._stopsignal = stopsignal
-        self._battery_json_file = battery_json_file
+        self._json_report_file = json_report_file
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
         if not self.disable_self_protect: self.start_selfprotect()
@@ -160,6 +160,18 @@ class Battery:
     @property
     def min_capacity(self):
         return self._min_capacity
+    
+    def json_report(self):
+        return {
+                    'current_capacity': self.current_capacity,
+                    'current_voltage': self.currtent_voltage,
+                    'min_capacity': self.min_capacity,
+                    'min_voltage': self.min_voltage,
+                    'max_capacity': self.max_capacity,
+                    'max_voltage': self.max_voltage,
+                    'charger_present': self._charger.present,
+                    'charger_charging': self._charger.charging & self._charger.present
+                }
 
     def _minutes_since_boot(self):
         return time.clock_gettime(time.CLOCK_BOOTTIME) / 60
@@ -188,23 +200,9 @@ class Battery:
                 f'It {"needs" if self.needs_charging() else "does not need"} charging. ' \
                 f'Charger is {"not " if not self._charger.present else ""}present.')
     
-    def print_battery_report(self):
-        print(self.battery_report(), flush=True)
-    
-    def start_regular_battery_report(self, schedule):
-        self._regular_report = BackgroundScheduler()
-        self._regular_report.add_job(self.print_battery_report, CronTrigger.from_crontab(schedule))
-        self._regular_report.start()
-
-    def stop_regular_battery_report(self):
-        if self._regular_report:
-            self._regular_report.stop()
-            self._regular_report = None
-
     def start_charge_control(self):
         if self._charge_control_thread and self._charge_control_thread.is_alive():
             return
-        # print(f'Starting charge control. {self.battery_report()}', flush=True)
         print(f'Starting charge control.', flush=True)
         self._stop_charge_control = Event()
         self._charge_control_thread = Thread(target=self._charge_control, daemon=True)
@@ -313,24 +311,6 @@ class UPS_monitor:
             v = self.battery.current_voltage
             c_min = self.battery.min_capacity
             v_min = self.battery.min_voltage
-            if self.battery._battery_json_file != '':
-                battery_status = {
-                    'current_capacity': c,
-                    'current_voltage': v,
-                    'min_capacity': c_min,
-                    'min_voltage': v_min,
-                    'max_capacity': self.battery.max_capacity,
-                    'max_voltage': self.battery.max_voltage,
-                    'charger_present': self._charger.present,
-                    'charger_charging': self._charger.charging & self._charger.present
-                }
-                if self.battery._battery_json_file:
-                    try:
-                        with open(self.battery._battery_json_file, 'w') as json_file:
-                            json.dump(battery_status, json_file)
-                    except IOError as e:
-                        print(f"Error writing to battery JSON file ({self.battery._battery_json_file}): {e}", flush=True)
-
             if not self._charger.present:
                 if c <= c_min and not self._shutdown_initiated:
                     self.initiate_5_minute_shutdown(f'Capacity {c}% below setpoint {c_min}%')
@@ -355,6 +335,66 @@ class UPS_monitor:
             elif not self._shutdown_initiated and self._timer_no_power.elapsed_time() >= self._max_duration:
                 self.initiate_5_minute_shutdown(f'Power failed for {(self._timer_no_power.elapsed_time()/60):0.0f} minutes')
             time.sleep(30)
+
+
+class Publisher:
+    '''This class will handle various external communication whith the UPS daemon'''
+    def __init__(self, battery, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=10):
+        self._battery = battery
+        self._stop_signal = stop_signal
+        self._battery_report_schedule = battery_report_schedule
+        self._json_report_file = json_report_file
+        self._json_report_period = json_report_period
+
+    def publish_json_file(self):
+        if self.battery._json_report_file != '':
+            try:
+                with open(self.battery._json_report_file, 'w') as json_file:
+                    json.dump(self.battery.json_report, json_file)
+            except IOError as e:
+                print(f"Error writing battery report to JSON file ({self.battery._json_report_file}): {e}", flush=True)
+
+    def _publish_json_file_thread(self):
+        while not self._stop_publish_json_file_thread.is_set():
+            self.publish_json_file()
+            time.sleep(self._json_report_period)
+
+    def start_publish_json_file_thread(self):
+        if self._publish_json_file_thread and self._publish_json_file_thread.is_alive():
+            return
+        self._stop_publish_json_file_thread = Event()
+        self._publish_json_file_thread = Thread(target=self._publish_json_file_thread, daemon=True)
+        self._publish_json_file_thread.start()
+    
+    def stop_publish_json_file_thread(self):
+        if self._publish_json_file_thread and self._publish_json_file_thread.is_alive():
+            self._stop_publish_json_file_thread.set()
+            self._publish_json_file_thread.join()
+
+    def print_battery_report(self):
+        print(self._battery.battery_report(), flush=True)
+    
+    def start_regular_battery_report(self, schedule):
+        self._regular_report = BackgroundScheduler()
+        self._regular_report.add_job(self.print_battery_report, CronTrigger.from_crontab(schedule))
+        self._regular_report.start()
+
+    def stop_regular_battery_report(self):
+        if self._regular_report:
+            self._regular_report.stop()
+            self._regular_report = None
+
+    def _start_publishers(self):
+        if self._json_report_file != '':
+            self.start_publish_json_file_thread()
+        if self._battery_report_schedule != '':
+            self.start_regular_battery_report()
+
+    def _stop_publishers(self):
+        if self._json_report_file != '':
+            self.stop_publish_json_file_thread()
+        if self._battery_report_schedule != '':
+            self.stop_regular_battery_report()
 
 class GracefullKiller:
     kill_now = False
@@ -385,7 +425,8 @@ if __name__ == '__main__':
     PIDFILE                 = config['general'].get('pid_file')
     DISABLE_SELF_PROTECT    = config['general'].getboolean('disable_self_protect')
     NO_POWER_AT_START       = config['general'].get('no_power_at_start')
-    BATTERY_JSON_FILE       = config['general'].get('battery_json_file').strip().strip('"')
+    JSON_REPORT_FILE        = config['general'].get('json_report_file').strip().strip('"')
+    JSON_REPORT_PERIOD      = config['general'].getint('json_report_period')
 
     # Ensure only one instance of the script is running
     if PIDFILE != '':
@@ -403,8 +444,10 @@ if __name__ == '__main__':
         battery = Battery(BUS_ADDRESS, BATTERY_ADDRESS, charger, max_voltage=MAX_VOLTAGE, \
                           min_voltage=MIN_VOLTAGE, max_capacity=MAX_CHARGE_CAPACITY, \
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
-                          battery_report_schedule=BATTERY_REPORT_SCHEDULE, disable_self_protect=DISABLE_SELF_PROTECT, \
-                          stopsignal=stopsignal, battery_json_file=BATTERY_JSON_FILE)
+                          disable_self_protect=DISABLE_SELF_PROTECT, \
+                          stopsignal=stopsignal)
+        publisher = Publisher(stop_signal=stopsignal, battery=battery, battery_report_schedule=BATTERY_REPORT_SCHEDULE,
+                              json_report_file=JSON_REPORT_FILE, json_report_period=JSON_REPORT_PERIOD)
         battery.print_battery_report()
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
