@@ -164,7 +164,7 @@ class Battery:
     def json_report(self):
         return {
                     'current_capacity': self.current_capacity,
-                    'current_voltage': self.currtent_voltage,
+                    'current_voltage': self.current_voltage,
                     'min_capacity': self.min_capacity,
                     'min_voltage': self.min_voltage,
                     'max_capacity': self.max_capacity,
@@ -345,6 +345,7 @@ class Publisher:
         self._battery_report_schedule = battery_report_schedule
         self._json_report_file = json_report_file
         self._json_report_period = json_report_period
+        self._publish_json_file_thread = None
 
     def publish_json_file(self):
         if self._json_report_file != '':
@@ -354,19 +355,18 @@ class Publisher:
             except IOError as e:
                 print(f"Error writing battery report to JSON file ({self._json_report_file}): {e}", flush=True)
 
-    def _publish_json_file_thread(self):
+    def _publish_json_file_process(self):
         while not self._stop_publish_json_file_thread.is_set():
             self.publish_json_file()
             time.sleep(self._json_report_period)
 
-    def start_publish_json_file_thread(self):
-        if self._publish_json_file_thread and self._publish_json_file_thread.is_alive():
-            return
-        self._stop_publish_json_file_thread = Event()
-        self._publish_json_file_thread = Thread(target=self._publish_json_file_thread, daemon=True)
-        self._publish_json_file_thread.start()
+    def start_publish_json_file_process(self):
+        if not(self._publish_json_file_thread and self._publish_json_file_thread.is_alive()):
+            self._stop_publish_json_file_thread = Event()
+            self._publish_json_file_thread = Thread(target=self._publish_json_file_process, daemon=True)
+            self._publish_json_file_thread.start()
     
-    def stop_publish_json_file_thread(self):
+    def stop_publish_json_file_process(self):
         if self._publish_json_file_thread and self._publish_json_file_thread.is_alive():
             self._stop_publish_json_file_thread.set()
             self._publish_json_file_thread.join()
@@ -384,15 +384,14 @@ class Publisher:
             self._regular_report.stop()
             self._regular_report = None
 
-    def _start_publishers(self):
+    def start_publishers(self):
         if self._json_report_file != '':
-            self.start_publish_json_file_thread()
+            self.start_publish_json_file_process()
         if self._battery_report_schedule != '':
-            self.start_regular_battery_report()
-
-    def _stop_publishers(self):
+            self.start_regular_battery_report(self._battery_report_schedule)
+    def stop_publishers(self):
         if self._json_report_file != '':
-            self.stop_publish_json_file_thread()
+            self.stop_publish_json_file_process()
         if self._battery_report_schedule != '':
             self.stop_regular_battery_report()
 
@@ -461,7 +460,8 @@ if __name__ == '__main__':
         elif not charger.present and NO_POWER_AT_START == 'run_till_protect':
             battery.start_charge_control() # Do not warmup, handle charging if power returns
             # We are not starting ups for this session.
-        publisher.print_battery_report()   
+        publisher.print_battery_report()
+        publisher.start_publishers()
         systemd.daemon.notify('READY=1')
         print('Startup complete.', flush=True)
         while True:
