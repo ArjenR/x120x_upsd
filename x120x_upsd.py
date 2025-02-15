@@ -129,8 +129,7 @@ class Battery:
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
         if not self.disable_self_protect: self.start_selfprotect()
-        if self._battery_report_schedule:
-            self.start_regular_battery_report(self._battery_report_schedule)
+        
         
     @property
     def current_voltage(self):
