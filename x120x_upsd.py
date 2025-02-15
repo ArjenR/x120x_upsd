@@ -448,7 +448,6 @@ if __name__ == '__main__':
                           stopsignal=stopsignal)
         publisher = Publisher(stop_signal=stopsignal, battery=battery, battery_report_schedule=BATTERY_REPORT_SCHEDULE,
                               json_report_file=JSON_REPORT_FILE, json_report_period=JSON_REPORT_PERIOD)
-        battery.print_battery_report()
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
             if NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect', 'standard']:
@@ -462,7 +461,7 @@ if __name__ == '__main__':
         elif not charger.present and NO_POWER_AT_START == 'run_till_protect':
             battery.start_charge_control() # Do not warmup, handle charging if power returns
             # We are not starting ups for this session.
-            
+        publisher.print_battery_report()   
         systemd.daemon.notify('READY=1')
         print('Startup complete.', flush=True)
         while True:
