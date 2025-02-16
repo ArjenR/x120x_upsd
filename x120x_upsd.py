@@ -270,7 +270,13 @@ class UPS_monitor:
         self._monitor_battery_thread = None
         self._monitor_charger_thread = None
         self._stopsignal = stopsignal
-     
+    
+    def json_report(self):
+        return {
+                    'shutdown_initiated': self._shutdown_initiated,
+                    'timer_no_power': round(self._timer_no_power.elapsed_time(),0)
+                }
+    
     def initiate_5_minute_shutdown(self, message):
         if not self._shutdown_initiated:
             print(f'Initiating shutdown. {message}', flush=True)
@@ -339,19 +345,25 @@ class UPS_monitor:
 
 class Publisher:
     '''This class will handle various external communication whith the UPS daemon'''
-    def __init__(self, battery, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=10):
+    def __init__(self, battery, ups=None, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=10):
         self._battery = battery
         self._stop_signal = stop_signal
         self._battery_report_schedule = battery_report_schedule
         self._json_report_file = json_report_file
         self._json_report_period = json_report_period
         self._publish_json_file_thread = None
+        self._ups = ups
 
     def publish_json_file(self):
+        report = {}
+        if self._battery:
+            report.update(self._battery.json_report())
+        if self._ups:
+            report.update(self._ups.json_report())
         if self._json_report_file != '':
             try:
                 with open(self._json_report_file, 'w') as json_file:
-                    json.dump(self._battery.json_report(), json_file)
+                    json.dump(report, json_file)
             except IOError as e:
                 print(f"Error writing battery report to JSON file ({self._json_report_file}): {e}", flush=True)
 
@@ -445,8 +457,6 @@ if __name__ == '__main__':
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
                           disable_self_protect=DISABLE_SELF_PROTECT, \
                           stopsignal=stopsignal)
-        publisher = Publisher(stop_signal=stopsignal, battery=battery, battery_report_schedule=BATTERY_REPORT_SCHEDULE,
-                              json_report_file=JSON_REPORT_FILE, json_report_period=JSON_REPORT_PERIOD)
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
             if NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect', 'standard']:
@@ -460,6 +470,8 @@ if __name__ == '__main__':
         elif not charger.present and NO_POWER_AT_START == 'run_till_protect':
             battery.start_charge_control() # Do not warmup, handle charging if power returns
             # We are not starting ups for this session.
+        publisher = Publisher(stop_signal=stopsignal, battery=battery, ups=ups, battery_report_schedule=BATTERY_REPORT_SCHEDULE,
+                              json_report_file=JSON_REPORT_FILE, json_report_period=JSON_REPORT_PERIOD)
         publisher.print_battery_report()
         publisher.start_publishers()
         systemd.daemon.notify('READY=1')
