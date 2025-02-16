@@ -9,6 +9,7 @@ Type=notify
 WatchdogSec=120s
 # NotifyAccess=main
 ExecStart=/usr/local/bin/x120x_upsd.py
+KillSignal=SIGTERM
 Restart=on-failure
 
 [Install]
