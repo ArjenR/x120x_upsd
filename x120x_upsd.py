@@ -107,6 +107,11 @@ class Charger:
     def charging(self):
         return self._charging
 
+    def json_report(self):
+        return {
+                    'charger_present': self.present,
+                    'charger_charging': self.charging & self.present
+                }
 
 class Battery:
     def __init__(self, bus_address, address, charger, max_voltage=0, min_voltage=0, max_capacity=None, min_capacity=20,
@@ -274,7 +279,8 @@ class UPS_monitor:
     def json_report(self):
         return {
                     'shutdown_initiated': self._shutdown_initiated,
-                    'timer_no_power': round(self._timer_no_power.elapsed_time(),0)
+                    'timer_no_power': round(self._timer_no_power.elapsed_time(),0),
+                    'seconds_to_shutdown': self._max_duration - round(self._timer_no_power.elapsed_time(),0)
                 }
     
     def initiate_5_minute_shutdown(self, message):
@@ -345,8 +351,9 @@ class UPS_monitor:
 
 class Publisher:
     '''This class will handle various external communication whith the UPS daemon'''
-    def __init__(self, battery, ups=None, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=10):
+    def __init__(self, battery=None, charger=None, ups=None, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=10):
         self._battery = battery
+        self._charger = charger
         self._stop_signal = stop_signal
         self._battery_report_schedule = battery_report_schedule
         self._json_report_file = json_report_file
@@ -354,10 +361,13 @@ class Publisher:
         self._publish_json_file_thread = None
         self._ups = ups
 
+
     def publish_json_file(self):
         report = {}
         if self._battery:
             report.update(self._battery.json_report())
+        if self._charger:
+            report.update(self._charger.json_report())
         if self._ups:
             report.update(self._ups.json_report())
         if self._json_report_file != '':
@@ -470,7 +480,7 @@ if __name__ == '__main__':
         elif not charger.present and NO_POWER_AT_START == 'run_till_protect':
             battery.start_charge_control() # Do not warmup, handle charging if power returns
             # We are not starting ups for this session.
-        publisher = Publisher(stop_signal=stopsignal, battery=battery, ups=ups, battery_report_schedule=BATTERY_REPORT_SCHEDULE,
+        publisher = Publisher(stop_signal=stopsignal, battery=battery, charger=charger, ups=ups, battery_report_schedule=BATTERY_REPORT_SCHEDULE,
                               json_report_file=JSON_REPORT_FILE, json_report_period=JSON_REPORT_PERIOD)
         publisher.print_battery_report()
         publisher.start_publishers()
