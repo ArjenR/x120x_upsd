@@ -40,7 +40,8 @@ config['DEFAULT'] = {
     'json_report_file': '',
     'json_report_period': '',
     'disable_self_protect': 'Off',
-    'no_power_at_start': 'default'
+    'no_power_at_start': 'default',
+    'temperature_sensor_type': ''
 }
 
 CONFIG_FILE = '/usr/local/etc/x120x_upsd.ini'
@@ -115,7 +116,7 @@ class Charger:
 
 class Battery:
     def __init__(self, bus_address, address, charger, max_voltage=0, min_voltage=0, max_capacity=None, min_capacity=20,
-                warmup_time=60, disable_self_protect=False, stopsignal=None, json_report_file=''):
+                warmup_time=60, disable_self_protect=False, stopsignal=None, json_report_file='', temperature_sensor=None):
         self._bus = smbus2.SMBus(bus_address)
         self._address = address
         self._charger = charger
@@ -134,6 +135,7 @@ class Battery:
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
         if not self.disable_self_protect: self.start_selfprotect()
+        self._temperature_sensor = temperature_sensor
         
         
     @property
@@ -165,24 +167,32 @@ class Battery:
     @property
     def min_capacity(self):
         return self._min_capacity
+    @property
+    def temperature(self):
+        if self._temperature_sensor:
+            return self._temperature_sensor.temperature
+        return None
     
     def json_report(self):
-        return {
+        report = {
                     'current_capacity': self.current_capacity,
                     'current_voltage': self.current_voltage,
                     'min_capacity': self.min_capacity,
                     'min_voltage': self.min_voltage,
                     'max_capacity': self.max_capacity,
                     'max_voltage': self.max_voltage,
-                    'charger_present': self._charger.present,
-                    'charger_charging': self._charger.charging & self._charger.present
                 }
+        if self._temperature_sensor:
+            report.update({'battery_temperature': self.temperature})
+        return report
 
     def _minutes_since_boot(self):
         return time.clock_gettime(time.CLOCK_BOOTTIME) / 60
 
     @property
     def is_warmed_up(self):
+        if self._temperature_sensor and self._temperature_sensor.temperature >= 10:
+            return True
         return self._minutes_since_boot() > self._warmup_time
     
     def needs_charging(self):
@@ -203,6 +213,7 @@ class Battery:
         return (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
                 f'and {"not " if not self._charger.charging & self._charger.present else ""}charging. ' \
                 f'It {"needs" if self.needs_charging() else "does not need"} charging. ' \
+                f'Battery temperature is {self.temperature:0.1f}�C. ' \
                 f'Charger is {"not " if not self._charger.present else ""}present.')
     
     def start_charge_control(self):
@@ -432,6 +443,49 @@ class GracefullKiller:
             os.unlink(PIDFILE)
         sys.exit(0)
 
+class adafruit_dht_sensor:
+    def __init__(self, sensor_type, gpio_pin, pull_up):
+        self._sensor_type = sensor_type
+        self._gpio_pin = getattr(board, 'D' + gpio_pin)
+        if pull_up == 'PULL_UP':
+            self._gpio_pin.PULL_UP = True
+        if sensor_type == 'DHT22':
+            self._sensor = adafruit_dht_sensor.DHT22(self._gpio_pin)
+        elif sensor_type == 'DHT11':
+            self._sensor = adafruit_dht_sensor.DHT11(self._gpio_pin)
+    
+    @property
+    def temperature(self):
+        temperature_c = None
+        for _ in range(3):
+            try:
+                temperature_c = self._sensor.temperature
+            except RuntimeError as error:
+                # Apparently errors happen fairly often, DHT's are hard to read. We try 3 times, for luck.
+                time.sleep(0.5)
+                continue
+            except Exception as error:
+                self.release_sensor()
+                self = None # can this be done?
+                raise error
+        return temperature_c
+    
+    def release_sensor(self):
+        # probably nice to do this on shutdown
+        self._sensor.exit()
+   
+def get_temp_sensor(TEMPERATURE_SENSOR_TYPE):
+    sensor = None
+    if TEMPERATURE_SENSOR_TYPE in ('DHT22', 'DHT11'):
+        try:
+            import board
+            import adafruit_dht
+        except ImportError:
+            print('Required Python libraries for DHT22 and DHT11 sensor not found.', Flush=True)
+        sensor_type, gpio_pin, pull_up = TEMPERATURE_SENSOR_TYPE.split(',')
+        sensor = adafruit_dht_sensor(sensor_type, gpio_pin, pull_up)
+    return sensor
+
 if __name__ == '__main__':
     print('Starting up UPS control daemon.', flush=True)
     
@@ -448,7 +502,7 @@ if __name__ == '__main__':
     NO_POWER_AT_START       = config['general'].get('no_power_at_start')
     JSON_REPORT_FILE        = config['general'].get('json_report_file').strip().strip('"')
     JSON_REPORT_PERIOD      = config['general'].getint('json_report_period')
-
+    TEMPERATURE_SENSOR_TYPE = config['general'].get('temperature_sensor_type')
     # Ensure only one instance of the script is running
     if PIDFILE != '':
         pid = str(os.getpid())
@@ -461,12 +515,13 @@ if __name__ == '__main__':
   
     try:
         stopsignal = GracefullKiller()
+        temperature_sensor = get_temp_sensor(TEMPERATURE_SENSOR_TYPE)
         charger = Charger(CHG_ONOFF_PIN, CHG_PRESENT_PIN)
         battery = Battery(BUS_ADDRESS, BATTERY_ADDRESS, charger, max_voltage=MAX_VOLTAGE, \
                           min_voltage=MIN_VOLTAGE, max_capacity=MAX_CHARGE_CAPACITY, \
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
                           disable_self_protect=DISABLE_SELF_PROTECT, \
-                          stopsignal=stopsignal)
+                          stopsignal=stopsignal, temperature_sensor=temperature_sensor)
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
             if NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect', 'standard']:
