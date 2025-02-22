@@ -9,7 +9,7 @@ It manages charging of the lithium cells.
 It shuts down the pi when condfigured parameters are reached.
 """
 
-
+ #sudo bash -c "for ((i=0; i<32; i++)); do echo \$i; echo in >/sys/class/gpio/gpio\$i/direction; echo \$i >/sys/class/gpio/unexport; done"
 import configparser
 import os
 import signal
@@ -124,7 +124,7 @@ class Battery:
         self._recharge_hysteresis = 3 # percentage at which battery may slowely lose charge before recharging
         self._protect_voltage = 3.0
         self._max_voltage = max_voltage if (max_voltage <= 4.2 and max_voltage >= 3.5) else 0
-        self._min_capacity = min_capacity if (min_capacity >= 20 and min_capacity <= 80) else 10
+        self._min_capacity = min_capacity if (min_capacity >= 10 and min_capacity <= 80) else 10
         self._min_voltage = min_voltage if min_voltage <= 4 else 0
         self._warmup_time = warmup_time
         self._warmup_thread = None
@@ -136,6 +136,10 @@ class Battery:
         self._charger.stop()
         if not self.disable_self_protect: self.start_selfprotect()
         self._temperature_sensor = temperature_sensor
+        self._MINIMAL_CHARGE_TEMPERATURE = 15
+        self._MAXIMAL_CHARGE_TEMPERATURE = 50
+        self._MAXIMAL_TEMPERATURE = 55
+        self._do_not_charge_signal = self._temperature_sensor != None
         
         
     @property
@@ -167,12 +171,26 @@ class Battery:
     @property
     def min_capacity(self):
         return self._min_capacity
+        
     @property
     def temperature(self):
-        if self._temperature_sensor:
+        if self._temperature_sensor != None:
             return self._temperature_sensor.temperature
         return None
     
+    @property
+    def _do_not_charge(self):
+        return self._do_not_charge_signal
+
+    @_do_not_charge.setter
+    def _do_not_charge(self, value):
+        if value != self._do_not_charge_signal:
+            if value:
+                print('Battery temperature out of range. Disallowing charging', flush=True)
+            else:
+                print('Battery temperature in range. Allowing charging', flush=True)
+            self._do_not_charge_signal = value
+
     def json_report(self):
         report = {
                     'current_capacity': self.current_capacity,
@@ -182,8 +200,9 @@ class Battery:
                     'max_capacity': self.max_capacity,
                     'max_voltage': self.max_voltage,
                 }
-        if self._temperature_sensor:
-            report.update({'battery_temperature': self.temperature})
+        temp = self.temperature
+        if temp:
+            report.update({'battery_temperature': temp})
         return report
 
     def _minutes_since_boot(self):
@@ -191,11 +210,13 @@ class Battery:
 
     @property
     def is_warmed_up(self):
-        if self._temperature_sensor and self._temperature_sensor.temperature >= 10:
+        temp = self.temperature
+        if temp and temp >= 10:
             return True
         return self._minutes_since_boot() > self._warmup_time
     
     def needs_charging(self):
+        if self._do_not_charge: return False
         if self._max_capacity != None and self._max_capacity >= 20 \
             and self._max_capacity <= 100 and self._max_capacity <= self.current_capacity:
             return False
@@ -210,11 +231,16 @@ class Battery:
         return None
   
     def battery_report(self):
-        return (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
+        message = (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
                 f'and {"not " if not self._charger.charging & self._charger.present else ""}charging. ' \
                 f'It {"needs" if self.needs_charging() else "does not need"} charging. ' \
-                f'Battery temperature is {self.temperature:0.1f}�C. ' \
                 f'Charger is {"not " if not self._charger.present else ""}present.')
+        temp = self.temperature
+        if temp:
+            message += f' Battery temperature is {temp:0.1f}�C. '
+        if self._do_not_charge:
+            message += f' Charging is currently not allowed. '
+        return message
     
     def start_charge_control(self):
         if self._charge_control_thread and self._charge_control_thread.is_alive():
@@ -255,10 +281,10 @@ class Battery:
 
     def _charge_control(self):
         while not self._stop_charge_control.is_set() or not (self._stopsignal != None and self._stopsignal.kill_now):
-            if self.needs_charging() == False and self._charger.charging:
+            if (self.needs_charging() == False and self._charger.charging) or self._do_not_charge:
                 self._charger.stop()
                 print(f'Charging stopped at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
-            elif self.needs_charging() == True and not self._charger.charging:
+            elif self.needs_charging() == True and not self._do_not_charge and not self._charger.charging:
                 self._charger.start()
                 print(f'Charging {"started" if self._charger.present else "needed"} at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
             time.sleep(30)
@@ -268,11 +294,20 @@ class Battery:
         self._selfprotect_thread.start()
 
     def _selfprotect(self):
-        while (self.current_voltage >= self._protect_voltage) or not (self._stopsignal != None and self._stopsignal.kill_now):
+        while not (self._stopsignal != None and self._stopsignal.kill_now):
+            temp = self.temperature
+            if (self.current_voltage < self._protect_voltage and not charger.present):
+                print('Battery is too low! Emergency shutdown!', flush=True)
+                call('sudo nohup shutdown -h now', shell=True)
+            elif temp and temp > self._MAXIMAL_TEMPERATURE and not charger.present:
+                print('Battery is too hot! Emergency shutdown!', flush=True)
+                call('sudo nohup shutdown -h now', shell=True)
+            elif temp != None:
+                self._do_not_charge = (temp < self._MINIMAL_CHARGE_TEMPERATURE or temp > self._MAXIMAL_CHARGE_TEMPERATURE)
+            elif temp == None:
+                self._do_not_charge = False
             time.sleep(30)
-        # If this loop exits, power is too low!
-        print('Battery is too low! Emergency shutdown!', flush=True)
-        call('sudo nohup shutdown -h now', shell=True)
+
 
 
 class UPS_monitor:
@@ -443,45 +478,57 @@ class GracefullKiller:
             os.unlink(PIDFILE)
         sys.exit(0)
 
+
 class adafruit_dht_sensor:
     def __init__(self, sensor_type, gpio_pin, pull_up):
+        board = __import__('board')
+        adafruit_dht = __import__('adafruit_dht')
         self._sensor_type = sensor_type
-        self._gpio_pin = getattr(board, 'D' + gpio_pin)
-        if pull_up == 'PULL_UP':
-            self._gpio_pin.PULL_UP = True
-        if sensor_type == 'DHT22':
-            self._sensor = adafruit_dht_sensor.DHT22(self._gpio_pin)
-        elif sensor_type == 'DHT11':
-            self._sensor = adafruit_dht_sensor.DHT11(self._gpio_pin)
+        try:
+            self._gpio_pin = getattr(board, 'D' + gpio_pin)
+            if pull_up == 'PULL_UP':
+                self._gpio_pin.PULL_UP = True
+        except RuntimeError as error:
+            raise error
+        except Exception as error:
+            raise error
+        for _ in range(10):
+            try:
+                if sensor_type == 'DHT22':
+                    self._sensor = adafruit_dht.DHT22(self._gpio_pin)
+                elif sensor_type == 'DHT11':
+                    self._sensor = adafruit_dht.DHT11(self._gpio_pin)
+            except Exception as error:
+                    self._sensor.release_sensor()
+                    self._sensor = None
+                    raise error
     
     @property
     def temperature(self):
-        temperature_c = None
-        for _ in range(3):
+        for _ in range(10):
             try:
                 temperature_c = self._sensor.temperature
             except RuntimeError as error:
-                # Apparently errors happen fairly often, DHT's are hard to read. We try 3 times, for luck.
+                # Apparently errors happen fairly often, DHT's are hard to read. We try 10 times, for luck.
+                print(f'Unable to read temperature sensor. Retrying', flush=True)
                 time.sleep(0.5)
                 continue
             except Exception as error:
                 self.release_sensor()
                 self = None # can this be done?
                 raise error
-        return temperature_c
+            else:
+                return temperature_c
+        return None
     
     def release_sensor(self):
         # probably nice to do this on shutdown
         self._sensor.exit()
    
+
 def get_temp_sensor(TEMPERATURE_SENSOR_TYPE):
     sensor = None
-    if TEMPERATURE_SENSOR_TYPE in ('DHT22', 'DHT11'):
-        try:
-            import board
-            import adafruit_dht
-        except ImportError:
-            print('Required Python libraries for DHT22 and DHT11 sensor not found.', Flush=True)
+    if TEMPERATURE_SENSOR_TYPE.split(',')[0] in ('DHT22', 'DHT11'):
         sensor_type, gpio_pin, pull_up = TEMPERATURE_SENSOR_TYPE.split(',')
         sensor = adafruit_dht_sensor(sensor_type, gpio_pin, pull_up)
     return sensor
@@ -541,16 +588,18 @@ if __name__ == '__main__':
         publisher.start_publishers()
         systemd.daemon.notify('READY=1')
         print('Startup complete.', flush=True)
-        while True:
+        while not stopsignal.kill_now:
             time.sleep(60)
             systemd.daemon.notify('WATCHDOG=1')
 
     except Exception as e:
         print(f'There was an error: {e}', flush=True)
         traceback.print_exc()
+        temperature_sensor.release_sensor()
         sys.exit(1)
 
     finally:
+        temperature_sensor.release_sensor()
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
         sys.exit(0)
