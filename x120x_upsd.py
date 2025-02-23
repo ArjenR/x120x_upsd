@@ -9,7 +9,6 @@ It manages charging of the lithium cells.
 It shuts down the pi when condfigured parameters are reached.
 """
 
- #sudo bash -c "for ((i=0; i<32; i++)); do echo \$i; echo in >/sys/class/gpio/gpio\$i/direction; echo \$i >/sys/class/gpio/unexport; done"
 import configparser
 import os
 import signal
@@ -32,7 +31,7 @@ config = configparser.ConfigParser()
 config['DEFAULT'] = {
     'max_voltage': '0',
     'max_charge_capacity': '80',
-    'min_charge_capacity': '20', 
+    'min_charge_capacity': '20',
     'battery_report_schedule': '0 * * * *',
     'ac_max_downtime': '5',
     'warmup_time': '0',
@@ -59,7 +58,7 @@ class TimerError(Exception):
 class Timer:
     def __init__(self):
         self._start_time = None
-    
+
     def elapsed_time(self):
         """Return elapsed time"""
         if self._start_time is None:
@@ -80,7 +79,7 @@ class Timer:
         elapsed = self.elapsed_time()
         self._start_time = None
         return(elapsed)
-    
+
     def active(self):
         """Is the timer running."""
         return not(self._start_time is None)
@@ -134,50 +133,50 @@ class Battery:
         self._json_report_file = json_report_file
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
-        if not self.disable_self_protect: self.start_selfprotect()
         self._temperature_sensor = temperature_sensor
         self._MINIMAL_CHARGE_TEMPERATURE = 15
         self._MAXIMAL_CHARGE_TEMPERATURE = 50
         self._MAXIMAL_TEMPERATURE = 55
         self._do_not_charge_signal = self._temperature_sensor != None
-        
-        
+        if not self.disable_self_protect: self.start_selfprotect()
+
+
     @property
     def current_voltage(self):
         read = self._bus.read_word_data(self._address, 2) # reads word data (16 bit)
         swapped = struct.unpack('<H', struct.pack('>H', read))[0] # big endian to little endian
         voltage = swapped * 1.25 / 1000 / 16 # convert to understandable voltagesystemd.daemon.notify('READY=1')
         return voltage
-    
+
     @property
     def current_capacity(self):
         read = self._bus.read_word_data(self._address, 4) # reads word data (16 bit)
         swapped = struct.unpack('<H', struct.pack('>H', read))[0] # big endian to little endian
         capacity = swapped / 256 # convert to 1-100% scale
         return capacity
-    
+
     @property
     def max_voltage(self):
         return self._max_voltage
-    
+
     @property
     def max_capacity(self):
         return self._max_capacity
-    
+
     @property
     def min_voltage(self):
         return self._min_voltage
-    
+
     @property
     def min_capacity(self):
         return self._min_capacity
-        
+
     @property
     def temperature(self):
         if self._temperature_sensor != None:
             return self._temperature_sensor.temperature
         return None
-    
+
     @property
     def _do_not_charge(self):
         return self._do_not_charge_signal
@@ -214,7 +213,7 @@ class Battery:
         if temp and temp >= 10:
             return True
         return self._minutes_since_boot() > self._warmup_time
-    
+
     def needs_charging(self):
         if self._do_not_charge: return False
         if self._max_capacity != None and self._max_capacity >= 20 \
@@ -229,7 +228,7 @@ class Battery:
         elif self.current_voltage < (self._max_voltage - (self._max_voltage * self._recharge_hysteresis / 100)):
             return True
         return None
-  
+
     def battery_report(self):
         message = (f'Battery is currently at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V ' \
                 f'and {"not " if not self._charger.charging & self._charger.present else ""}charging. ' \
@@ -241,7 +240,7 @@ class Battery:
         if self._do_not_charge:
             message += f' Charging is currently not allowed. '
         return message
-    
+
     def start_charge_control(self):
         if self._charge_control_thread and self._charge_control_thread.is_alive():
             return
@@ -288,7 +287,7 @@ class Battery:
                 self._charger.start()
                 print(f'Charging {"started" if self._charger.present else "needed"} at {self.current_capacity:0.0f}%, {self.current_voltage:0.2f}V.', flush=True)
             time.sleep(30)
-    
+
     def start_selfprotect(self):
         self._selfprotect_thread = Thread(target=self._selfprotect, daemon=True)
         self._selfprotect_thread.start()
@@ -321,20 +320,20 @@ class UPS_monitor:
         self._monitor_battery_thread = None
         self._monitor_charger_thread = None
         self._stopsignal = stopsignal
-    
+
     def json_report(self):
         return {
                     'shutdown_initiated': self._shutdown_initiated,
                     'timer_no_power': round(self._timer_no_power.elapsed_time(),0),
                     'seconds_to_shutdown': self._max_duration - round(self._timer_no_power.elapsed_time(),0)
                 }
-    
+
     def initiate_5_minute_shutdown(self, message):
         if not self._shutdown_initiated:
             print(f'Initiating shutdown. {message}', flush=True)
             call('sudo shutdown -P +5 "Power failure, shutdown in 5 minutes."', shell=True)
         self._shutdown_initiated = True
-    
+
     def initiate_emergency_shutdown(self, message):
         print(f'Initiating shutdown. {message}', flush=True)
         call('sudo nohup shutdown -h now', shell=True)
@@ -344,7 +343,7 @@ class UPS_monitor:
         print(f'Cancelling shutdown.', flush=True)
         call('sudo shutdown -c "Shutdown is cancelled"', shell=True)
         self._shutdown_initiated = False
-        
+
     def start_monitor_processes(self):
         if not(self._monitor_battery_thread and self._monitor_battery_thread.is_alive()):
             self._stop_monitor_battery = Event()
@@ -362,7 +361,7 @@ class UPS_monitor:
         if self._monitor_charger_thread and self._monitor_charger_thread.is_alive():
             self._stop_monitor_charger.set()
             self._monitor_charger_thread.join()
-    
+
     def _monitor_battery(self):
         while not self._stop_monitor_battery.is_set():
             c = self.battery.current_capacity
@@ -433,7 +432,7 @@ class Publisher:
             self._stop_publish_json_file_thread = Event()
             self._publish_json_file_thread = Thread(target=self._publish_json_file_process, daemon=True)
             self._publish_json_file_thread.start()
-    
+
     def stop_publish_json_file_process(self):
         if self._publish_json_file_thread and self._publish_json_file_thread.is_alive():
             self._stop_publish_json_file_thread.set()
@@ -441,7 +440,7 @@ class Publisher:
 
     def print_battery_report(self):
         print(self._battery.battery_report(), flush=True)
-    
+
     def start_regular_battery_report(self, schedule):
         self._regular_report = BackgroundScheduler()
         self._regular_report.add_job(self.print_battery_report, CronTrigger.from_crontab(schedule))
@@ -484,25 +483,22 @@ class adafruit_dht_sensor:
         board = __import__('board')
         adafruit_dht = __import__('adafruit_dht')
         self._sensor_type = sensor_type
+        self._gpio_pin = getattr(board, 'D' + gpio_pin)
+        if pull_up == 'PULL_UP':
+            self._gpio_pin.PULL_UP = True
         try:
-            self._gpio_pin = getattr(board, 'D' + gpio_pin)
-            if pull_up == 'PULL_UP':
-                self._gpio_pin.PULL_UP = True
-        except RuntimeError as error:
-            raise error
+            if sensor_type == 'DHT22':
+                self._sensor = adafruit_dht.DHT22(self._gpio_pin)
+            elif sensor_type == 'DHT11':
+                self._sensor = adafruit_dht.DHT11(self._gpio_pin)
         except Exception as error:
-            raise error
-        for _ in range(10):
             try:
-                if sensor_type == 'DHT22':
-                    self._sensor = adafruit_dht.DHT22(self._gpio_pin)
-                elif sensor_type == 'DHT11':
-                    self._sensor = adafruit_dht.DHT11(self._gpio_pin)
+                self._sensor.release_sensor()
             except Exception as error:
-                    self._sensor.release_sensor()
-                    self._sensor = None
-                    raise error
-    
+                pass
+            self._sensor = None
+            raise error
+
     @property
     def temperature(self):
         for _ in range(10):
@@ -510,32 +506,42 @@ class adafruit_dht_sensor:
                 temperature_c = self._sensor.temperature
             except RuntimeError as error:
                 # Apparently errors happen fairly often, DHT's are hard to read. We try 10 times, for luck.
-                print(f'Unable to read temperature sensor. Retrying', flush=True)
+                print('Unable to read temperature sensor. Retrying', flush=True)
                 time.sleep(0.5)
                 continue
-            except Exception as error:
-                self.release_sensor()
-                self = None # can this be done?
-                raise error
             else:
                 return temperature_c
         return None
-    
+
     def release_sensor(self):
         # probably nice to do this on shutdown
-        self._sensor.exit()
-   
+        if self._sensor:
+            try:
+                self._sensor.exit()
+            except Exception as error:
+                pass
+            else:
+                self._sensor = None
 
 def get_temp_sensor(TEMPERATURE_SENSOR_TYPE):
     sensor = None
     if TEMPERATURE_SENSOR_TYPE.split(',')[0] in ('DHT22', 'DHT11'):
         sensor_type, gpio_pin, pull_up = TEMPERATURE_SENSOR_TYPE.split(',')
         sensor = adafruit_dht_sensor(sensor_type, gpio_pin, pull_up)
+        if sensor:
+            # test to see if the sensor is working
+            t = sensor.temperature
+            if t == None:
+                sensor = None
+                print('Sensor not working')
+            else:
+                print('Sensor working')
+                print('Temperature:', t)
     return sensor
 
 if __name__ == '__main__':
     print('Starting up UPS control daemon.', flush=True)
-    
+
     config.read(CONFIG_FILE)
     MAX_VOLTAGE             = config['general'].getfloat('max_voltage')
     MIN_VOLTAGE             = config['general'].getfloat('min_voltage')
@@ -559,7 +565,7 @@ if __name__ == '__main__':
         else:
             with open(PIDFILE, 'w') as f:
                 f.write(pid)
-  
+
     try:
         stopsignal = GracefullKiller()
         temperature_sensor = get_temp_sensor(TEMPERATURE_SENSOR_TYPE)
@@ -574,7 +580,7 @@ if __name__ == '__main__':
             if NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect', 'standard']:
                 raise Warning(f'Warning: no_power_at_start value \"{NO_POWER_AT_START}\" is not implemented. Using "standard" as fall-back.')
             battery.start_warmup() # start_warmup will start the other battery threads once done.
-            ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME, stopsignal=stopsignal) 
+            ups = UPS_monitor(charger, battery, max_duration=AC_MAX_DOWNTIME, stopsignal=stopsignal)
             ups.start_monitor_processes()
         elif not charger.present and NO_POWER_AT_START == 'run_till_minimums':
             battery.start_charge_control() # Do not warmup, handle charging if power return
@@ -595,12 +601,13 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'There was an error: {e}', flush=True)
         traceback.print_exc()
-        temperature_sensor.release_sensor()
+        if temperature_sensor:
+            temperature_sensor.release_sensor()
         sys.exit(1)
 
     finally:
-        temperature_sensor.release_sensor()
+        if temperature_sensor:
+            temperature_sensor.release_sensor()
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
         sys.exit(0)
-
