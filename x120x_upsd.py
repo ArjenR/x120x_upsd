@@ -13,6 +13,7 @@ import configparser
 import os
 import signal
 import smbus2
+import subprocess
 import systemd.daemon
 import struct
 import sys
@@ -23,7 +24,7 @@ import json
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from gpiozero import InputDevice, Button
-from subprocess import call
+from subprocess import run
 from threading import Thread, Event, Timer
 
 # Configuratiopn
@@ -85,6 +86,33 @@ class Timer:
         return not(self._start_time is None)
 
 
+class SystemFan:
+    ''' Controls the system fan using pinctrl.'''
+    def __init__(self):
+        self.__fan_pin = 45 # you can verify this with # pinctrl FAN_PWM
+    
+    @property
+    def state(self):
+        r = subprocess.check_output ('pinctrl FAN_PWM', shell=True).decode('utf-8')
+        if r == '45: a0    pd | hi // FAN_PWM/GPIO45 = PWM1_CHAN3\n':
+            return 'auto'
+        elif r == '45: op dl pd | lo // FAN_PWM/GPIO45 = output\n':
+            return 'on'
+        elif r == '45: op dh pd | hi // FAN_PWM/GPIO45 = output\n': # it better not be
+            return 'off'
+        else:
+            return 'unknown'
+        
+    def auto(self):
+        '''Let the system manage the fan based on CPU temperature'''
+        run('pinctrl FAN_PWM a0', shell=True)
+
+    def on(self):
+        '''Set the fan on to circulate air through the case and cool the batteries'''
+        run('pinctrl FAN_PWM op dl', shell=True)
+
+
+
 class Charger:
     def __init__(self, charger_control_pin, charger_pin):
         self._charger_control_pin = charger_control_pin
@@ -115,7 +143,7 @@ class Charger:
 
 class Battery:
     def __init__(self, bus_address, address, charger, max_voltage=0, min_voltage=0, max_capacity=None, min_capacity=20,
-                warmup_time=60, disable_self_protect=False, stopsignal=None, json_report_file='', temperature_sensor=None):
+                warmup_time=60, disable_self_protect=False, stopsignal=None, json_report_file='', temperature_sensor=None, fan=None):
         self._bus = smbus2.SMBus(bus_address)
         self._address = address
         self._charger = charger
@@ -134,6 +162,7 @@ class Battery:
         self.disable_self_protect=disable_self_protect
         self._charger.stop()
         self._temperature_sensor = temperature_sensor
+        self._fan = fan
         self._MINIMAL_CHARGE_TEMPERATURE = 15
         self._MAXIMAL_CHARGE_TEMPERATURE = 50
         self._MAXIMAL_TEMPERATURE = 55
@@ -202,6 +231,8 @@ class Battery:
         temp = self.temperature
         if temp:
             report.update({'battery_temperature': temp})
+        if self._fan != None:
+            report.update({'fan_state': self._fan.state})
         return report
 
     def _minutes_since_boot(self):
@@ -272,7 +303,7 @@ class Battery:
             while not self.is_warmed_up or not (self._stopsignal != None and self._stopsignal.kill_now):
                 if not self._charger.present:
                     print('Battery is not warmed up yet and no charger present!', flush=True)
-                    call('sudo nohup shutdown -h now', shell=True)
+                    run('sudo nohup shutdown -h now', shell=True)
                 time.sleep(10)
         if not (self._stopsignal != None and self._stopsignal.kill_now):
             print('Batteries are warmed up. Starting charging control process', flush=True)
@@ -297,14 +328,18 @@ class Battery:
             temp = self.temperature
             if (self.current_voltage < self._protect_voltage and not charger.present):
                 print('Battery is too low! Emergency shutdown!', flush=True)
-                call('sudo nohup shutdown -h now', shell=True)
+                run('sudo nohup shutdown -h now', shell=True)
             elif temp and temp > self._MAXIMAL_TEMPERATURE and not charger.present:
                 print('Battery is too hot! Emergency shutdown!', flush=True)
-                call('sudo nohup shutdown -h now', shell=True)
-            elif temp != None:
+                run('sudo nohup shutdown -h now', shell=True)
+            if temp != None:
                 self._do_not_charge = (temp < self._MINIMAL_CHARGE_TEMPERATURE or temp > self._MAXIMAL_CHARGE_TEMPERATURE)
             elif temp == None:
                 self._do_not_charge = False
+            if temp >= self._MAXIMAL_CHARGE_TEMPERATURE and self._fan.state != 'on':
+                self._fan.on()
+            elif temp < self._MAXIMAL_CHARGE_TEMPERATURE and self._fan.state == 'on':
+                self._fan.auto()
             time.sleep(30)
 
 
@@ -331,17 +366,17 @@ class UPS_monitor:
     def initiate_5_minute_shutdown(self, message):
         if not self._shutdown_initiated:
             print(f'Initiating shutdown. {message}', flush=True)
-            call('sudo shutdown -P +5 "Power failure, shutdown in 5 minutes."', shell=True)
+            run('sudo shutdown -P +5 "Power failure, shutdown in 5 minutes."', shell=True)
         self._shutdown_initiated = True
 
     def initiate_emergency_shutdown(self, message):
         print(f'Initiating shutdown. {message}', flush=True)
-        call('sudo nohup shutdown -h now', shell=True)
+        run('sudo nohup shutdown -h now', shell=True)
         self._shutdown_initiated = True
 
     def cancel_shutdown(self):
         print(f'Cancelling shutdown.', flush=True)
-        call('sudo shutdown -c "Shutdown is cancelled"', shell=True)
+        run('sudo shutdown -c "Shutdown is cancelled"', shell=True)
         self._shutdown_initiated = False
 
     def start_monitor_processes(self):
@@ -497,7 +532,7 @@ class adafruit_dht_sensor:
             except Exception as error:
                 pass
             self._sensor = None
-            raise error
+#            raise error
 
     @property
     def temperature(self):
@@ -570,11 +605,12 @@ if __name__ == '__main__':
         stopsignal = GracefullKiller()
         temperature_sensor = get_temp_sensor(TEMPERATURE_SENSOR_TYPE)
         charger = Charger(CHG_ONOFF_PIN, CHG_PRESENT_PIN)
+        fan = SystemFan()
         battery = Battery(BUS_ADDRESS, BATTERY_ADDRESS, charger, max_voltage=MAX_VOLTAGE, \
                           min_voltage=MIN_VOLTAGE, max_capacity=MAX_CHARGE_CAPACITY, \
                           min_capacity=MIN_CHARGE_CAPACITY, warmup_time=WARMUP_TIME, \
                           disable_self_protect=DISABLE_SELF_PROTECT, \
-                          stopsignal=stopsignal, temperature_sensor=temperature_sensor)
+                          stopsignal=stopsignal, temperature_sensor=temperature_sensor, fan=fan)
         if (NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect'] and not charger.present) or charger.present:
             # failsafe, anything other is handled as default.
             if NO_POWER_AT_START not in ['run_till_minimums', 'run_till_protect', 'standard']:
@@ -608,6 +644,8 @@ if __name__ == '__main__':
     finally:
         if temperature_sensor:
             temperature_sensor.release_sensor()
+        if fan:
+            fan.auto()
         if PIDFILE != '' and os.path.isfile(PIDFILE):
             os.unlink(PIDFILE)
         sys.exit(0)
