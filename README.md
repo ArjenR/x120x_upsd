@@ -14,6 +14,7 @@ I wrote this because I needed something a bit more robust and flexible than what
 - Uses the systemd journal for logging. See it using `journalctl -xeu x120x_upsd.service`
 - It is meant to run as a systemd service, but can be run directly.
 - A temperature sensor attached to the lithium-cells can be used to monitor the cells to be in the correct temperature range for charging or dis-charging. Currently the Adafruit DHT22 and DHT11 are implemented. Pull requests for other types are welcome.
+- Cool down the case by spinning the system fan when the batteries reach 50C.
 
 ## Install
 1. Clone or download this repository.
