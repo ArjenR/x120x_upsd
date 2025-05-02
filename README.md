@@ -29,8 +29,8 @@ sudo python -m pip install --break-system-packages adafruit-circuitpython-dht
 ```
 
 ## Todo
-- Add monitoring for a temperature sensor to measure battery temperature. Need to decide which sensor 1st. 
-- An api for an applet of some sorts?
+- ~~Add monitoring for a temperature sensor to measure battery temperature. Need to decide which sensor 1st.~~
+- An api for an applet of some sorts? Partly done hack
 
 ## License
 This work is licensed under a
