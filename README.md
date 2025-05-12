@@ -12,6 +12,7 @@ I wrote this because I needed something a bit more robust and flexible than what
 - Charge the battery to a set maximum level (charge or voltage) so not to overcharge the battery and prolong battery life.
 - Only start charging when the pi has been running for a certain time so the battery can be warmed up by the Pi itself when when it might be used in colder ( < 10 degrees Celsius) environments. This is not really precise and very dependent on the environment. Adding and monitoring a temperature sensor is a todo.
 - Uses the systemd journal for logging. See it using `journalctl -xeu x120x_upsd.service`
+- Writes a json status report to a tmpfs based location for ingestion into other tools.
 - It is meant to run as a systemd service, but can be run directly.
 - A temperature sensor attached to the lithium-cells can be used to monitor the cells to be in the correct temperature range for charging or dis-charging. Currently the Adafruit DHT22 and DHT11 are implemented. Pull requests for other types are welcome.
 - Cool down the case by spinning the system fan when the batteries reach 50C.
