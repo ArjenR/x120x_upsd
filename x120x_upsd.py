@@ -38,7 +38,7 @@ config['DEFAULT'] = {
     'warmup_time': '0',
     'pid_file': '',
     'json_report_file': '',
-    'json_report_period': '',
+    'json_report_period': '0',
     'disable_self_protect': 'Off',
     'no_power_at_start': 'default',
     'temperature_sensor_type': ''
@@ -431,7 +431,7 @@ class UPS_monitor:
 
 class Publisher:
     '''This class will handle various external communication whith the UPS daemon'''
-    def __init__(self, battery=None, charger=None, ups=None, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=10):
+    def __init__(self, battery=None, charger=None, ups=None, stop_signal = None, battery_report_schedule='', json_report_file='', json_report_period=0):
         self._battery = battery
         self._charger = charger
         self._stop_signal = stop_signal
@@ -487,7 +487,7 @@ class Publisher:
             self._regular_report = None
 
     def start_publishers(self):
-        if self._json_report_file != '':
+        if self._json_report_file != '' and self._json_report_period > 0:
             self.start_publish_json_file_process()
         if self._battery_report_schedule != '':
             self.start_regular_battery_report(self._battery_report_schedule)
