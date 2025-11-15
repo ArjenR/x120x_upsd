@@ -334,12 +334,12 @@ class Battery:
                 run('sudo nohup shutdown -h now', shell=True)
             if temp != None:
                 self._do_not_charge = (temp < self._MINIMAL_CHARGE_TEMPERATURE or temp > self._MAXIMAL_CHARGE_TEMPERATURE)
+                if temp >= self._MAXIMAL_CHARGE_TEMPERATURE-5 and self._fan.state != 'on':
+                    self._fan.on()
+                elif temp < self._MAXIMAL_CHARGE_TEMPERATURE-5 and self._fan.state == 'on':
+                    self._fan.auto()
             elif temp == None:
                 self._do_not_charge = False
-            if temp >= self._MAXIMAL_CHARGE_TEMPERATURE and self._fan.state != 'on':
-                self._fan.on()
-            elif temp < self._MAXIMAL_CHARGE_TEMPERATURE and self._fan.state == 'on':
-                self._fan.auto()
             time.sleep(30)
 
 
